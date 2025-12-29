@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor MPU6050 - TUVN</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700;900&display=swap" rel="stylesheet">
+    
+    <style>
+        body { 
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+        }
+        
+        /* Indicador analógico circular */
+        .gauge-container {
+            position: relative;
+            width: 280px;
+            height: 280px;
+            margin: 0 auto;
+        }
+        
+        .gauge-circle {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: conic-gradient(
+                from 180deg,
+                #ef4444 0deg,
+                #f97316 60deg,
+                #fbbf24 120deg,
+                #84cc16 180deg,
+                #22c55e 240deg,
+                #06b6d4 300deg,
+                #3b82f6 360deg
+            );
+            position: relative;
+            box-shadow: 0 0 30px rgba(0,0,0,0.3), inset 0 0 20px rgba(0,0,0,0.2);
+        }
+        
+        .gauge-inner {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 85%;
+            height: 85%;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(0,0,0,0.2);
+        }
+        
+        .gauge-needle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 4px;
+            height: 40%;
+            background: linear-gradient(to top, #dc2626, #991b1b);
+            transform-origin: bottom center;
+            transform: translate(-50%, -100%) rotate(0deg);
+            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 2px 2px 0 0;
+            box-shadow: 0 0 10px rgba(220, 38, 38, 0.5);
+        }
+        
+        .gauge-center {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 20px;
+            height: 20px;
+            background: radial-gradient(circle, #dc2626, #991b1b);
+            border-radius: 50%;
+            box-shadow: 0 0 15px rgba(220, 38, 38, 0.8);
+            z-index: 10;
+        }
+        
+        /* Marcadores del indicador */
+        .gauge-marker {
+            position: absolute;
+            width: 2px;
+            height: 15px;
+            background: #64748b;
+            top: 10px;
+            left: 50%;
+            transform-origin: center 130px;
+        }
+        
+        .gauge-marker.major {
+            height: 25px;
+            width: 3px;
+            background: #334155;
+        }
+        
+        /* Tarjetas de datos */
+        .data-card {
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .data-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(59, 130, 246, 0.3);
+        }
+        
+        .ping-dot {
+            animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+        }
+        
+        @keyframes ping {
+            75%, 100% { transform: scale(2); opacity: 0; }
+        }
+        
+        /* Animación de números */
+        @keyframes countUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-value {
+            animation: countUp 0.3s ease;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- HEADER INSTITUCIONAL -->
+    <header class="bg-black text-white shadow-2xl border-b-4 border-blue-600">
+        <div class="container mx-auto px-4 py-6">
+            <div class="text-center">
+                <div class="flex items-center justify-center gap-3 mb-2">
+                    <i data-lucide="graduation-cap" class="w-10 h-10 text-blue-500"></i>
+                </div>
+                <h1 class="text-4xl font-black tracking-tight text-blue-500">
+                    INSTITUTO SUPERIOR TECNOLÓGICO UNIVERSITARIO VIDA NUEVA
+                </h1>
+                <p class="text-blue-400 mt-2 text-sm font-semibold tracking-widest">AUTOMATIZACIÓN E INSTRUMENTACIÓN</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- BARRA DE INFORMACIÓN -->
+    <div class="bg-slate-800 border-b border-slate-700 shadow-lg">
+        <div class="container mx-auto px-4 py-3 flex flex-wrap justify-between items-center text-sm text-slate-300">
+            <div class="flex items-center gap-2">
+                <i data-lucide="user-circle" class="w-4 h-4 text-blue-500"></i>
+                <span class="font-medium">Desarrollador: <span class="text-blue-400 font-bold">Carlos Ruiz</span></span>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3 bg-slate-700/50 px-4 py-2 rounded-lg border border-slate-600">
+                    <div class="relative flex h-3 w-3">
+                        <span id="pingDot" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75 hidden"></span>
+                        <span id="staticDot" class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </div>
+                    <span id="statusText" class="text-sm font-mono text-red-300">Desconectado</span>
+                </div>
+                <div class="flex gap-4 font-mono text-slate-400">
+                    <span id="dateDisplay">--/--/----</span>
+                    <span id="timeDisplay" class="text-blue-400 font-bold">--:--:--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="flex-grow container mx-auto px-4 py-8">
+        
+        <div class="text-center mb-8">
+            <h2 class="text-4xl font-bold text-white mb-2">Monitor de Acelerómetro y Giroscopio</h2>
+            <p class="text-blue-300 text-lg">Sensor MPU6050 - 6 Ejes de Movimiento</p>
+        </div>
+
+        <!-- INDICADOR ANALÓGICO PRINCIPAL -->
+        <div class="mb-12">
+            <div class="bg-white/10 backdrop-blur-lg rounded-3xl shadow-2xl p-8 border border-white/20">
+                <h3 class="text-2xl font-bold text-white text-center mb-6">
+                    <i data-lucide="compass" class="inline w-8 h-8 text-blue-400"></i>
+                    ÁNGULO DE INCLINACIÓN
+                </h3>
+                
+                <div class="gauge-container mx-auto mb-6">
+                    <div class="gauge-circle">
+                        <!-- Marcadores del indicador -->
+                        <div class="gauge-marker major" style="transform: translateX(-50%) rotate(0deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(30deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(60deg);"></div>
+                        <div class="gauge-marker major" style="transform: translateX(-50%) rotate(90deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(120deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(150deg);"></div>
+                        <div class="gauge-marker major" style="transform: translateX(-50%) rotate(180deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(210deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(240deg);"></div>
+                        <div class="gauge-marker major" style="transform: translateX(-50%) rotate(270deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(300deg);"></div>
+                        <div class="gauge-marker" style="transform: translateX(-50%) rotate(330deg);"></div>
+                        
+                        <div class="gauge-inner">
+                            <div class="text-center">
+                                <div id="angleValue" class="text-5xl font-black text-slate-800">0°</div>
+                                <div class="text-slate-500 text-sm font-semibold mt-2">INCLINACIÓN</div>
+                            </div>
+                        </div>
+                        
+                        <div id="gaugeNeedle" class="gauge-needle"></div>
+                        <div class="gauge-center"></div>
+                    </div>
+                </div>
+                
+                <!-- Etiquetas del indicador -->
+                <div class="flex justify-between text-white font-bold text-sm px-4">
+                    <span>0°</span>
+                    <span>90°</span>
+                    <span>180°</span>
+                    <span>270°</span>
+                    <span>360°</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- DATOS DEL ACELERÓMETRO -->
+        <div class="mb-8">
+            <h3 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                <i data-lucide="move" class="w-7 h-7 text-blue-400"></i>
+                Acelerómetro (g)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="data-card bg-gradient-to-br from-red-500/20 to-red-700/20 backdrop-blur-lg rounded-xl p-6 border border-red-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-red-300 font-bold text-lg">EJE X</span>
+                        <i data-lucide="arrow-right" class="w-6 h-6 text-red-400"></i>
+                    </div>
+                    <div id="accelX" class="text-4xl font-black text-white">--</div>
+                    <div class="text-red-200 text-sm mt-2">Aceleración lateral</div>
+                </div>
+                
+                <div class="data-card bg-gradient-to-br from-green-500/20 to-green-700/20 backdrop-blur-lg rounded-xl p-6 border border-green-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-green-300 font-bold text-lg">EJE Y</span>
+                        <i data-lucide="arrow-up" class="w-6 h-6 text-green-400"></i>
+                    </div>
+                    <div id="accelY" class="text-4xl font-black text-white">--</div>
+                    <div class="text-green-200 text-sm mt-2">Aceleración vertical</div>
+                </div>
+                
+                <div class="data-card bg-gradient-to-br from-blue-500/20 to-blue-700/20 backdrop-blur-lg rounded-xl p-6 border border-blue-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-blue-300 font-bold text-lg">EJE Z</span>
+                        <i data-lucide="move-diagonal" class="w-6 h-6 text-blue-400"></i>
+                    </div>
+                    <div id="accelZ" class="text-4xl font-black text-white">--</div>
+                    <div class="text-blue-200 text-sm mt-2">Aceleración frontal</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DATOS DEL GIROSCOPIO -->
+        <div class="mb-8">
+            <h3 class="text-2xl font-bold text-white mb-4 flex items-center gap-2">
+                <i data-lucide="rotate-3d" class="w-7 h-7 text-purple-400"></i>
+                Giroscopio (°/s)
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="data-card bg-gradient-to-br from-purple-500/20 to-purple-700/20 backdrop-blur-lg rounded-xl p-6 border border-purple-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-purple-300 font-bold text-lg">ROLL</span>
+                        <i data-lucide="rotate-ccw" class="w-6 h-6 text-purple-400"></i>
+                    </div>
+                    <div id="gyroX" class="text-4xl font-black text-white">--</div>
+                    <div class="text-purple-200 text-sm mt-2">Rotación en X</div>
+                </div>
+                
+                <div class="data-card bg-gradient-to-br from-pink-500/20 to-pink-700/20 backdrop-blur-lg rounded-xl p-6 border border-pink-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-pink-300 font-bold text-lg">PITCH</span>
+                        <i data-lucide="rotate-cw" class="w-6 h-6 text-pink-400"></i>
+                    </div>
+                    <div id="gyroY" class="text-4xl font-black text-white">--</div>
+                    <div class="text-pink-200 text-sm mt-2">Rotación en Y</div>
+                </div>
+                
+                <div class="data-card bg-gradient-to-br from-cyan-500/20 to-cyan-700/20 backdrop-blur-lg rounded-xl p-6 border border-cyan-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <span class="text-cyan-300 font-bold text-lg">YAW</span>
+                        <i data-lucide="compass" class="w-6 h-6 text-cyan-400"></i>
+                    </div>
+                    <div id="gyroZ" class="text-4xl font-black text-white">--</div>
+                    <div class="text-cyan-200 text-sm mt-2">Rotación en Z</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTÓN CONECTAR -->
+        <div class="mt-12 flex justify-center">
+            <button id="connectBtn" onclick="toggleConnection()" 
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-5 px-12 rounded-full shadow-2xl flex items-center gap-3 transition-all hover:scale-105 active:scale-95 border-2 border-blue-400">
+                <i data-lucide="bluetooth" class="w-7 h-7"></i>
+                <span class="text-lg">CONECTAR SENSOR MPU6050</span>
+            </button>
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-black text-slate-400 py-6 text-center text-sm border-t-4 border-blue-600">
+        <p>© 2025 Instituto Superior Tecnológico Universitario Vida Nueva</p>
+        <p class="text-xs mt-1">Sistema de Monitoreo MPU6050</p>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        // RELOJ
+        function updateClock() {
+            const now = new Date();
+            const optionsDate = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('dateDisplay').textContent = now.toLocaleDateString('es-EC', optionsDate);
+            document.getElementById('timeDisplay').textContent = now.toLocaleTimeString('es-EC');
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // BLUETOOTH
+        const serviceUuid = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+        const characteristicUuid = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
+
+        let bluetoothDevice;
+        let bleCharacteristic;
+
+        const connectBtn = document.getElementById('connectBtn');
+        const statusText = document.getElementById('statusText');
+        const pingDot = document.getElementById('pingDot');
+        const staticDot = document.getElementById('staticDot');
+
+        async function toggleConnection() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                disconnect();
+            } else {
+                connect();
+            }
+        }
+
+        async function connect() {
+            try {
+                connectBtn.innerHTML = '<span class="animate-spin">⌛</span> BUSCANDO SENSOR...';
+                
+                console.log('Buscando dispositivo MPU6050...');
+                bluetoothDevice = await navigator.bluetooth.requestDevice({
+                    filters: [{ name: 'MPU6050_TUVN' }],
+                    optionalServices: [serviceUuid]
+                });
+
+                bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
+
+                const server = await bluetoothDevice.gatt.connect();
+                const service = await server.getPrimaryService(serviceUuid);
+                bleCharacteristic = await service.getCharacteristic(characteristicUuid);
+
+                await bleCharacteristic.startNotifications();
+                bleCharacteristic.addEventListener('characteristicvaluechanged', handleData);
+
+                console.log('¡Conectado al MPU6050!');
+                updateUIConnected();
+
+            } catch (error) {
+                console.log('Error de conexión:', error);
+                updateUIDisconnected();
+            }
+        }
+
+        function disconnect() {
+            if (bluetoothDevice && bluetoothDevice.gatt.connected) {
+                bluetoothDevice.gatt.disconnect();
+            }
+        }
+
+        function onDisconnected() {
+            console.log('Desconectado.');
+            updateUIDisconnected();
+        }
+
+        function handleData(event) {
+            const value = event.target.value;
+            const decoder = new TextDecoder('utf-8');
+            const jsonString = decoder.decode(value);
+
+            console.log("Dato recibido:", jsonString);
+
+            try {
+                // Formato esperado: {"ax":0.5,"ay":0.2,"az":9.8,"gx":10.5,"gy":-5.2,"gz":2.1}
+                const data = JSON.parse(jsonString);
+
+                // Actualizar valores del acelerómetro
+                if(data.ax !== undefined) {
+                    document.getElementById('accelX').textContent = data.ax.toFixed(2);
+                    document.getElementById('accelX').classList.add('animate-value');
+                }
+                if(data.ay !== undefined) {
+                    document.getElementById('accelY').textContent = data.ay.toFixed(2);
+                    document.getElementById('accelY').classList.add('animate-value');
+                }
+                if(data.az !== undefined) {
+                    document.getElementById('accelZ').textContent = data.az.toFixed(2);
+                    document.getElementById('accelZ').classList.add('animate-value');
+                }
+
+                // Actualizar valores del giroscopio
+                if(data.gx !== undefined) {
+                    document.getElementById('gyroX').textContent = data.gx.toFixed(1);
+                    document.getElementById('gyroX').classList.add('animate-value');
+                }
+                if(data.gy !== undefined) {
+                    document.getElementById('gyroY').textContent = data.gy.toFixed(1);
+                    document.getElementById('gyroY').classList.add('animate-value');
+                }
+                if(data.gz !== undefined) {
+                    document.getElementById('gyroZ').textContent = data.gz.toFixed(1);
+                    document.getElementById('gyroZ').classList.add('animate-value');
+                    
+                    // Actualizar indicador analógico basado en el giroscopio Z (Yaw)
+                    updateGauge(data.gz);
+                }
+
+                // Efecto de latido
+                pingDot.classList.remove('hidden');
+                setTimeout(() => {
+                    pingDot.classList.add('hidden');
+                }, 500);
+
+                lucide.createIcons();
+
+            } catch (e) {
+                console.error("Error al leer JSON:", e);
+            }
+        }
+
+        // Actualizar indicador analógico
+        function updateGauge(gyroZ) {
+            const needle = document.getElementById('gaugeNeedle');
+            const angleDisplay = document.getElementById('angleValue');
+            
+            // Convertir velocidad angular a ángulo de rotación
+            // Normalizar el valor entre 0-360 grados
+            let angle = ((gyroZ + 180) % 360 + 360) % 360;
+            
+            needle.style.transform = `translate(-50%, -100%) rotate(${angle}deg)`;
+            angleDisplay.textContent = Math.round(angle) + '°';
+            angleDisplay.classList.add('animate-value');
+            
+            setTimeout(() => {
+                angleDisplay.classList.remove('animate-value');
+            }, 300);
+        }
+
+        function updateUIConnected() {
+            connectBtn.innerHTML = '<i data-lucide="bluetooth-connected" class="w-7 h-7"></i> <span class="text-lg">DESCONECTAR SENSOR</span>';
+            lucide.createIcons();
+            connectBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'border-blue-400');
+            connectBtn.classList.add('bg-red-600', 'hover:bg-red-700', 'border-red-400');
+            
+            statusText.innerText = "CONECTADO";
+            statusText.classList.replace('text-red-300', 'text-emerald-400');
+            staticDot.classList.replace('bg-red-500', 'bg-emerald-500');
+        }
+
+        function updateUIDisconnected() {
+            connectBtn.innerHTML = '<i data-lucide="bluetooth" class="w-7 h-7"></i> <span class="text-lg">CONECTAR SENSOR MPU6050</span>';
+            lucide.createIcons();
+            connectBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'border-blue-400');
+            connectBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'border-red-400');
+
+            statusText.innerText = "DESCONECTADO";
+            statusText.classList.replace('text-emerald-400', 'text-red-300');
+            staticDot.classList.replace('bg-emerald-500', 'bg-red-500');
+            pingDot.classList.add('hidden');
+
+            // Resetear valores
+            document.getElementById('accelX').textContent = "--";
+            document.getElementById('accelY').textContent = "--";
+            document.getElementById('accelZ').textContent = "--";
+            document.getElementById('gyroX').textContent = "--";
+            document.getElementById('gyroY').textContent = "--";
+            document.getElementById('gyroZ').textContent = "--";
+            document.getElementById('angleValue').textContent = "0°";
+            document.getElementById('gaugeNeedle').style.transform = 'translate(-50%, -100%) rotate(0deg)';
+        }
+    </script>
+</body>
+</html>
